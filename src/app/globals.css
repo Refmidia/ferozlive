@@ -97,6 +97,21 @@ body {
   }
 }
 
+.hero-bg-zoom {
+  animation: hero-bg-zoom 22s ease-in-out infinite alternate;
+  will-change: transform;
+  transform-origin: 32% 12%;
+}
+
+@keyframes hero-bg-zoom {
+  0% {
+    transform: scale(1.06) translate3d(0, 0, 0);
+  }
+  100% {
+    transform: scale(1.16) translate3d(-1.5%, 2.5%, 0);
+  }
+}
+
 .room-code-shine {
   background:
     linear-gradient(135deg, rgba(233, 30, 99, 0.12), rgba(18, 10, 28, 0.55) 42%, rgba(123, 31, 162, 0.14));
@@ -153,6 +168,10 @@ body {
   }
 
   .room-bg-zoom {
+    animation: none;
+  }
+
+  .hero-bg-zoom {
     animation: none;
   }
 

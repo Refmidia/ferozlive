@@ -35,7 +35,7 @@ export default function PrivacyPage() {
             alt=""
             fill
             priority
-            className="object-cover object-[72%_18%]"
+            className="object-cover object-[35%_0%]"
             sizes="100vw"
           />
           <div className="absolute inset-0 bg-[linear-gradient(105deg,rgba(5,3,10,0.94)_0%,rgba(5,3,10,0.82)_42%,rgba(5,3,10,0.38)_100%)]" />

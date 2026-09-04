@@ -71,8 +71,11 @@ export function HomePage() {
     <>
       <section className="relative overflow-hidden pb-16 pt-28 sm:pt-32">
         <div
-          className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: "url('/hero-feroz.jpg')" }}
+          className="hero-bg-zoom absolute -inset-[8%] bg-cover bg-no-repeat"
+          style={{
+            backgroundImage: "url('/hero-feroz.jpg')",
+            backgroundPosition: "35% top",
+          }}
           aria-hidden
         />
         <div className="hero-overlay absolute inset-0" aria-hidden />
