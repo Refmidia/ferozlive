@@ -12,7 +12,6 @@ import {
 } from "@livekit/components-react";
 import {
   Copy,
-  Link2,
   Lock,
   LockOpen,
   MonitorUp,
@@ -24,8 +23,15 @@ import { Modal } from "@/components/ui/modal";
 import { ConnectionIndicator } from "@/features/room/connection-indicator";
 import { IncompatibleBrowser } from "@/features/room/incompatible-browser";
 import { ParticipantList } from "@/features/room/participant-list";
+import {
+  FloatingReactions,
+  ROOM_REACTION_IDS,
+  useReactionBurst,
+  type RoomReactionId,
+} from "@/features/room/floating-reactions";
 import { RoomStage } from "@/features/room/room-stage";
 import { RoomToolbar } from "@/features/room/room-toolbar";
+import { RoomVoiceAudio } from "@/features/room/room-voice-audio";
 import { useClipboard } from "@/hooks/use-clipboard";
 import { useDisplayName } from "@/hooks/use-display-name";
 import { useScreenShareSupport } from "@/hooks/use-screen-share-support";
@@ -61,6 +67,11 @@ export function RoomSession({
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [draftName, setDraftName] = useState("");
+  const [deafened, setDeafened] = useState(false);
+  const [micDesired, setMicDesired] = useState(true);
+  const [forceMuted, setForceMuted] = useState(false);
+  const [hostMutedIdentities, setHostMutedIdentities] = useState<Set<string>>(() => new Set());
+  const { reactions, burst } = useReactionBurst();
   const inviteUrl = typeof window === "undefined" ? "" : `${window.location.origin}/room/${code}`;
 
   const views = useMemo(
@@ -88,6 +99,99 @@ export function RoomSession({
   const someoneElseSharing = screenTracks.some(
     (track) => track.participant.identity !== localParticipant.identity && track.publication,
   );
+  const someoneSharing = isSharing || someoneElseSharing;
+  const micEnabled = localParticipant.isMicrophoneEnabled;
+
+  useEffect(() => {
+    void room.startAudio().catch(() => {
+      // Browser may require a click first; toolbar actions will retry.
+    });
+  }, [room]);
+
+  useEffect(() => {
+    const desired = micDesired && !deafened && !forceMuted;
+    if (localParticipant.isMicrophoneEnabled === desired) {
+      return;
+    }
+
+    void localParticipant.setMicrophoneEnabled(desired).catch(() => {
+      if (desired) {
+        toast.error("Permissão de microfone negada ou indisponível.");
+        setMicDesired(false);
+      }
+    });
+  }, [localParticipant, micDesired, deafened, forceMuted]);
+
+  useEffect(() => {
+    const onData = (
+      payload: Uint8Array,
+      _participant?: { identity?: string },
+      _kind?: unknown,
+      topic?: string,
+    ) => {
+      try {
+        const parsed = JSON.parse(new TextDecoder().decode(payload)) as {
+          type?: string;
+          reactionId?: string;
+          emoji?: string;
+          identity?: string;
+          muted?: boolean;
+        };
+
+        if (parsed.type === "force_mute" && typeof parsed.identity === "string") {
+          const muted = Boolean(parsed.muted);
+          setHostMutedIdentities((current) => {
+            const next = new Set(current);
+            if (muted) next.add(parsed.identity!);
+            else next.delete(parsed.identity!);
+            return next;
+          });
+
+          if (parsed.identity === localParticipant.identity) {
+            setForceMuted(muted);
+            if (muted) {
+              setMicDesired(false);
+              void localParticipant.setMicrophoneEnabled(false).catch(() => undefined);
+              toast.message("O anfitrião mutou seu microfone.");
+            } else {
+              setMicDesired(true);
+              void (async () => {
+                try {
+                  // Republish clears a leftover server mute, if any.
+                  await localParticipant.setMicrophoneEnabled(false);
+                  await localParticipant.setMicrophoneEnabled(true);
+                  await room.startAudio();
+                } catch {
+                  // permission errors surface on next manual toggle
+                }
+              })();
+              toast.success("O anfitrião liberou seu microfone.");
+            }
+          }
+          return;
+        }
+
+        if (topic && topic !== "reaction" && topic !== "moderation") return;
+        if (parsed.type !== "reaction") return;
+        const reactionId = (parsed.reactionId ?? parsed.emoji) as RoomReactionId;
+        if (!(ROOM_REACTION_IDS as readonly string[]).includes(reactionId)) return;
+        burst(reactionId);
+      } catch {
+        // ignore malformed payloads
+      }
+    };
+
+    room.on(RoomEvent.DataReceived, onData);
+    return () => {
+      room.off(RoomEvent.DataReceived, onData);
+    };
+  }, [room, burst, localParticipant]);
+
+  useEffect(() => {
+    if (!forceMuted) return;
+    if (!localParticipant.isMicrophoneEnabled) return;
+    void localParticipant.setMicrophoneEnabled(false).catch(() => undefined);
+  }, [forceMuted, localParticipant, localParticipant.isMicrophoneEnabled]);
 
   useEffect(() => {
     const publication = localParticipant.getTrackPublication(Track.Source.ScreenShare);
@@ -147,14 +251,109 @@ export function RoomSession({
     await localParticipant.setScreenShareEnabled(false);
   }
 
+  async function sendReaction(reactionId: RoomReactionId) {
+    burst(reactionId);
+    try {
+      const payload = new TextEncoder().encode(
+        JSON.stringify({ type: "reaction", reactionId }),
+      );
+      await localParticipant.publishData(payload, {
+        reliable: false,
+        topic: "reaction",
+      });
+    } catch {
+      // local burst already shown
+    }
+  }
+
+  async function toggleMic() {
+    if (forceMuted) {
+      toast.error("Você foi mutado pelo anfitrião. Só ele pode liberar seu microfone.");
+      return;
+    }
+
+    if (deafened) {
+      setDeafened(false);
+      setMicDesired(true);
+      void room.startAudio().catch(() => undefined);
+      return;
+    }
+
+    const next = !micDesired;
+    setMicDesired(next);
+    void room.startAudio().catch(() => undefined);
+  }
+
+  async function toggleDeafen() {
+    if (forceMuted && !deafened) {
+      setDeafened(true);
+      setMicDesired(false);
+      toast.message("Áudio ensurdecido.");
+      return;
+    }
+
+    const next = !deafened;
+    setDeafened(next);
+    if (next) {
+      setMicDesired(false);
+      toast.message("Áudio ensurdecido. Você não ouve ninguém e fica mutado.");
+    } else if (!forceMuted) {
+      setMicDesired(true);
+      void room.startAudio().catch(() => undefined);
+      toast.message("Áudio reativado.");
+    } else {
+      toast.message("Áudio reativado, mas o anfitrião ainda manteve seu microfone mutado.");
+    }
+  }
+
+  async function broadcastForceMute(identity: string, muted: boolean) {
+    setHostMutedIdentities((current) => {
+      const next = new Set(current);
+      if (muted) next.add(identity);
+      else next.delete(identity);
+      return next;
+    });
+
+    try {
+      const payload = new TextEncoder().encode(
+        JSON.stringify({ type: "force_mute", identity, muted }),
+      );
+      await localParticipant.publishData(payload, {
+        reliable: true,
+        topic: "moderation",
+      });
+    } catch {
+      // API already applied server mute
+    }
+  }
+
   async function handleAdmin(path: string, body?: Record<string, unknown>) {
+    const isMuteAction = path.includes("/mute") && typeof body?.identity === "string";
+    const muted = body?.muted !== false;
+
     try {
       await apiFetch(path, {
         method: "POST",
         body: body ? JSON.stringify(body) : "{}",
       });
     } catch (error) {
-      toast.error(error instanceof ClientApiError ? error.message : "Ação administrativa recusada.");
+      // Unmute is app-controlled; still unlock even if LiveKit unmute fails.
+      if (!(isMuteAction && !muted)) {
+        toast.error(error instanceof ClientApiError ? error.message : "Ação administrativa recusada.");
+        return;
+      }
+    }
+
+    if (isMuteAction && typeof body?.identity === "string") {
+      await broadcastForceMute(body.identity, muted);
+      toast.success(muted ? "Participante mutado." : "Participante desmutado.");
+      return;
+    }
+
+    if (path.includes("/kick") && body?.ban) {
+      toast.success("Participante banido da sala.");
+    } else if (path.includes("/kick")) {
+      toast.success("Participante expulso.");
     }
   }
 
@@ -186,15 +385,24 @@ export function RoomSession({
       <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-white/8 px-4 sm:px-5">
         <div className="flex min-w-0 items-center gap-3">
           <Logo compact />
-          <button
-            type="button"
-            onClick={() => void copy(code, "code")}
-            className="inline-flex max-w-full items-center gap-2 rounded-full border border-[var(--sp-border-strong)] bg-[var(--sp-primary-soft)] px-3 py-1.5 text-sm font-medium text-[#FF8FBF] transition hover:bg-[rgba(233,30,99,0.24)]"
-            aria-label="Copiar código da sala"
-          >
-            <Link2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
-            <span className="truncate">{copied === "code" ? "Copiado" : code}</span>
-          </button>
+          <span className="hidden h-7 w-px bg-white/15 sm:block" aria-hidden />
+          <div className="flex min-w-0 items-center gap-1.5">
+            <p className="min-w-0 truncate text-sm font-medium text-white/90">
+              {displayName}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setDraftName(displayName);
+                setEditingName(true);
+              }}
+              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[#9A8AAE] transition hover:bg-white/5 hover:text-white"
+              aria-label="Editar nome"
+              title="Editar nome"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
@@ -238,29 +446,40 @@ export function RoomSession({
 
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         <aside className="flex w-full shrink-0 flex-col border-b border-white/8 bg-[#0a0710] lg:w-[300px] lg:border-b-0 lg:border-r">
-          <div className="border-b border-white/8 p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7E6E90]">
-              Código da sala
-            </p>
-            <div className="mt-2 flex items-center gap-2">
-              <p className="text-2xl font-semibold tracking-wide text-white">{code}</p>
-              <button
-                type="button"
-                onClick={() => void copy(code, "code")}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-[#C9B8D8] transition hover:bg-white/5 hover:text-white"
-                aria-label="Copiar código"
-              >
-                <Copy className="h-4 w-4" />
-              </button>
+          <div className="border-b border-white/8 px-3 py-3">
+            <div className="room-code-shine relative overflow-hidden rounded-xl border px-3 py-2.5">
+              <div className="relative z-10 flex items-center justify-between gap-2">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8B7A9C]">
+                  Código da sala
+                </p>
+                {hasPassword ? (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-[#FF8FBF]">
+                    <Lock className="h-3 w-3" aria-hidden />
+                    Protegida
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-medium text-[#7E6E90]">Aberta</span>
+                )}
+              </div>
+              <div className="relative z-10 mt-1.5 flex items-center gap-1.5">
+                <p className="w-fit rounded-lg border border-dashed border-[#FF2D95]/45 bg-black/20 px-2.5 py-1.5 font-mono text-sm font-semibold tracking-[0.14em] text-white">
+                  {code}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void copy(code, "code")}
+                  className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition ${
+                    copied === "code"
+                      ? "bg-[#12301f] text-[#3DDC97]"
+                      : "text-[#9A8AAE] hover:bg-white/5 hover:text-white"
+                  }`}
+                  aria-label="Copiar código"
+                  title="Copiar código"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
-            <button
-              type="button"
-              onClick={() => void copy(inviteUrl, "link")}
-              className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--sp-border)] bg-transparent px-3 py-2.5 text-sm text-[#E8D7F5] transition hover:border-[var(--sp-border-strong)] hover:bg-[var(--sp-primary-soft)]"
-            >
-              <Link2 className="h-4 w-4 text-[#FF2D95]" aria-hidden />
-              {copied === "link" ? "Link copiado" : "Copiar link do convite"}
-            </button>
           </div>
 
           <div className="flex-1 overflow-y-auto p-4">
@@ -268,7 +487,14 @@ export function RoomSession({
               participants={views}
               localIdentity={localParticipant.identity}
               isHost={role === "host"}
+              hostMutedIdentities={hostMutedIdentities}
               onKick={(identity) => void handleAdmin(`/api/rooms/${code}/kick`, { identity })}
+              onMute={(identity) =>
+                void handleAdmin(`/api/rooms/${code}/mute`, { identity, muted: true })
+              }
+              onUnmute={(identity) =>
+                void handleAdmin(`/api/rooms/${code}/mute`, { identity, muted: false })
+              }
               onStopShare={(identity) =>
                 void handleAdmin(`/api/rooms/${code}/stop-share`, { identity })
               }
@@ -279,50 +505,56 @@ export function RoomSession({
             <button
               type="button"
               onClick={() => void (isSharing ? stopOwnShare() : startShare(quality))}
-              disabled={!canShare && !isSharing}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--sp-border)] px-3 py-2.5 text-sm text-[#E8D7F5] transition hover:border-[var(--sp-border-strong)] hover:bg-[var(--sp-primary-soft)] disabled:opacity-50"
+              disabled={(!canShare && !isSharing) || someoneElseSharing}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--sp-border)] px-3 py-2.5 text-sm text-[#E8D7F5] transition hover:border-[var(--sp-border-strong)] hover:bg-[var(--sp-primary-soft)] disabled:opacity-50"
             >
               <MonitorUp className="h-4 w-4 text-[#FF2D95]" aria-hidden />
-              {isSharing ? "Parar compartilhamento" : "Compartilhar tela"}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setDraftName(displayName);
-                setEditingName(true);
-              }}
-              className="mt-3 flex w-full items-center justify-between gap-2 rounded-lg px-1 py-1 text-left text-sm text-[#9A8AAE] transition hover:text-white"
-            >
-              <span className="truncate">Você entrou como {displayName}</span>
-              <Pencil className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              {isSharing ? "Parar de compartilhar" : "Compartilhar tela"}
             </button>
           </div>
         </aside>
 
-        <main className="relative min-h-0 flex-1">
-          <RoomStage
-            fullscreenRef={stageRef}
-            canShare={canShare}
-            onShare={() => void startShare(quality)}
-            onCopyLink={() => void copy(inviteUrl, "link")}
-          />
-          <RoomToolbar
-            sharing={isSharing}
-            onToggleShare={() => void (isSharing ? stopOwnShare() : startShare(quality))}
-            onFullscreen={() => {
-              const node = stageRef.current;
-              if (!node) return;
-              if (document.fullscreenElement) {
-                void document.exitFullscreen();
-              } else {
-                void node.requestFullscreen();
-              }
-            }}
-            onLeave={() => {
-              void room.disconnect();
-              router.push("/");
-            }}
-          />
+        <main className="relative flex min-h-0 flex-1 flex-col">
+          <div className="relative min-h-0 flex-1">
+            <RoomStage
+              fullscreenRef={stageRef}
+              canShare={canShare}
+              localSharing={isSharing}
+              displayName={displayName}
+              isHost={role === "host"}
+              speaking={Boolean(localView?.isSpeaking)}
+              onShare={() => void startShare(quality)}
+              onCopyLink={() => void copy(inviteUrl, "link")}
+            />
+            <FloatingReactions reactions={reactions} />
+          </div>
+          <RoomVoiceAudio muted={deafened} />
+          <div className="shrink-0 border-t border-white/8 bg-[#07050c] px-3 py-3">
+            <RoomToolbar
+              sharing={isSharing}
+              someoneSharing={someoneSharing}
+            micEnabled={micEnabled && !forceMuted}
+            deafened={deafened}
+              speaking={Boolean(localView?.isSpeaking)}
+              onToggleShare={() => void (isSharing ? stopOwnShare() : startShare(quality))}
+              onToggleMic={() => void toggleMic()}
+              onToggleDeafen={() => void toggleDeafen()}
+              onReact={(reactionId) => void sendReaction(reactionId)}
+              onFullscreen={() => {
+                const node = stageRef.current;
+                if (!node) return;
+                if (document.fullscreenElement) {
+                  void document.exitFullscreen();
+                } else {
+                  void node.requestFullscreen();
+                }
+              }}
+              onLeave={() => {
+                void room.disconnect();
+                router.push("/");
+              }}
+            />
+          </div>
         </main>
       </div>
 

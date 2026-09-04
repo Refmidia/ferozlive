@@ -63,6 +63,17 @@ export const kickParticipantSchema = z.object({
     .min(4, "Participante inválido.")
     .max(80, "Participante inválido.")
     .regex(/^spu_[a-f0-9]+$|^host_[a-f0-9]+$/, "Participante inválido."),
+  ban: z.boolean().optional(),
+  displayName: z.string().min(1).max(64).optional(),
+});
+
+export const muteParticipantSchema = z.object({
+  identity: z
+    .string()
+    .min(4)
+    .max(80)
+    .regex(/^spu_[a-f0-9]+$|^host_[a-f0-9]+$/),
+  muted: z.boolean().default(true),
 });
 
 export const stopShareSchema = z.object({

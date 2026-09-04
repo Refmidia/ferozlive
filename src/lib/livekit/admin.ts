@@ -85,3 +85,43 @@ export async function muteScreenShare(
     ),
   );
 }
+
+export async function setParticipantMicrophoneMuted(
+  roomName: string,
+  identity: string,
+  muted: boolean,
+): Promise<void> {
+  const service = createRoomService();
+  const participant = await service.getParticipant(roomName, identity);
+  const tracks = participant.tracks ?? [];
+
+  const micTracks = tracks.filter((track) => {
+    const source = Number(track.source);
+    return source === 2 || String(track.source).toLowerCase().includes("microphone");
+  });
+
+  if (micTracks.length === 0) {
+    return;
+  }
+
+  const results = await Promise.allSettled(
+    micTracks.map((track) =>
+      service.mutePublishedTrack(roomName, identity, track.sid, muted),
+    ),
+  );
+
+  // LiveKit often blocks server-side unmute; app-level unlock still proceeds.
+  if (muted) {
+    const failed = results.find((result) => result.status === "rejected");
+    if (failed && failed.status === "rejected") {
+      throw failed.reason;
+    }
+  }
+}
+
+export async function muteParticipantMicrophone(
+  roomName: string,
+  identity: string,
+): Promise<void> {
+  await setParticipantMicrophoneMuted(roomName, identity, true);
+}

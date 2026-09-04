@@ -4,10 +4,10 @@ import { jsonError, jsonOk, readJson } from "@/lib/http/responses";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import {
   hostFromRequest,
-  kickParticipantFromRoom,
   loadJoinableRoom,
+  muteParticipantInRoom,
 } from "@/lib/rooms/service";
-import { kickParticipantSchema, roomCodeSchema } from "@/lib/validation/schemas";
+import { muteParticipantSchema, roomCodeSchema } from "@/lib/validation/schemas";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,7 +20,7 @@ export async function POST(
     await enforceRateLimit(request, "admin");
     const { code } = await context.params;
     const publicCode = roomCodeSchema.parse(code);
-    const body = kickParticipantSchema.parse(await readJson(request));
+    const body = muteParticipantSchema.parse(await readJson(request));
     const admin = createSupabaseAdmin();
     const room = await loadJoinableRoom(admin, publicCode);
 
@@ -28,11 +28,8 @@ export async function POST(
       throw unauthorized();
     }
 
-    await kickParticipantFromRoom(admin, room, body.identity, {
-      ban: body.ban,
-      displayName: body.displayName,
-    });
-    return jsonOk({ kicked: true, banned: Boolean(body.ban) });
+    await muteParticipantInRoom(admin, room, body.identity, body.muted);
+    return jsonOk({ muted: body.muted });
   } catch (error) {
     return jsonError(error);
   }

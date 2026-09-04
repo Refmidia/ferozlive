@@ -13,14 +13,14 @@ export function EmptyStage({
   canShare?: boolean;
 }) {
   return (
-    <div className="flex h-full min-h-[420px] flex-col items-center justify-center px-6 text-center">
-      <div className="flex h-20 w-20 items-center justify-center rounded-2xl border border-white/10 bg-[#15101f]">
-        <Monitor className="h-9 w-9 text-[#7E6E90]" aria-hidden />
+    <div className="relative z-10 flex h-full min-h-[420px] flex-col items-center justify-center px-6 text-center">
+      <div className="flex h-20 w-20 items-center justify-center rounded-2xl border border-white/15 bg-black/45 backdrop-blur-md">
+        <Monitor className="h-9 w-9 text-white/80" aria-hidden />
       </div>
-      <h2 className="mt-6 text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+      <h2 className="mt-6 text-2xl font-semibold tracking-tight text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.65)] sm:text-3xl">
         Ninguém está compartilhando ainda
       </h2>
-      <p className="mt-3 max-w-md text-sm leading-6 text-[#9A8AAE]">
+      <p className="mt-3 max-w-md text-sm leading-6 text-white/80 drop-shadow-[0_2px_10px_rgba(0,0,0,0.55)]">
         Chame alguém com o link da sala ou comece transmitindo a sua tela.
       </p>
       {onShare || onCopyLink ? (
@@ -40,7 +40,7 @@ export function EmptyStage({
             <Button
               variant="secondary"
               onClick={onCopyLink}
-              className="rounded-xl border-[var(--sp-border-strong)] bg-transparent"
+              className="rounded-xl border-white/25 bg-black/40 backdrop-blur-md"
               aria-label="Copiar link"
             >
               <Link2 className="h-4 w-4" aria-hidden />

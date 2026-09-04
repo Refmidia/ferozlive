@@ -5,6 +5,7 @@ import { jsonError, jsonOk, readJson } from "@/lib/http/responses";
 import { markTicketCitizen } from "@/lib/admin/tickets";
 import { createSupabaseAdmin, insertRoomEvent } from "@/lib/supabase/admin";
 import {
+  assertParticipantNotBanned,
   ensureRoomCapacity,
   hostFromRequest,
   issueRoomToken,
@@ -32,6 +33,7 @@ export async function POST(request: Request) {
 
     const isHost = hostFromRequest(request, room);
     if (!isHost) {
+      await assertParticipantNotBanned(admin, room, body.displayName);
       await ensureRoomCapacity(room);
     }
 

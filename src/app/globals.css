@@ -63,8 +63,102 @@ body {
   }
 }
 
+.reaction-float {
+  animation: reaction-float 2.6s ease-out forwards;
+}
+
+@keyframes reaction-float {
+  0% {
+    opacity: 0;
+    transform: translateY(24px) scale(0.7);
+  }
+  12% {
+    opacity: 1;
+    transform: translateY(0) scale(1.08);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-220px) scale(1.15) rotate(12deg);
+  }
+}
+
+.room-bg-zoom {
+  animation: room-bg-zoom 18s ease-in-out infinite alternate;
+  will-change: transform;
+  transform-origin: 78% 18%;
+}
+
+@keyframes room-bg-zoom {
+  0% {
+    transform: scale(1.04);
+  }
+  100% {
+    transform: scale(1.14);
+  }
+}
+
+.room-code-shine {
+  background:
+    linear-gradient(135deg, rgba(233, 30, 99, 0.12), rgba(18, 10, 28, 0.55) 42%, rgba(123, 31, 162, 0.14));
+  border-color: rgba(255, 45, 149, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 0 0 1px rgba(168, 85, 247, 0.08);
+}
+
+.room-code-shine::before {
+  content: "";
+  position: absolute;
+  top: -40%;
+  left: -55%;
+  width: 70%;
+  height: 180%;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    rgba(168, 85, 247, 0.08) 28%,
+    rgba(255, 45, 149, 0.22) 48%,
+    rgba(168, 85, 247, 0.1) 68%,
+    transparent 100%
+  );
+  filter: blur(10px);
+  transform: translateX(0) rotate(8deg);
+  animation: room-code-shine 7s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes room-code-shine {
+  0% {
+    transform: translateX(-10%) rotate(8deg);
+    opacity: 0.35;
+  }
+  50% {
+    transform: translateX(160%) rotate(8deg);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateX(210%) rotate(8deg);
+    opacity: 0.2;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .fade-up {
     animation: none;
+  }
+
+  .reaction-float {
+    animation: none;
+    opacity: 0.9;
+  }
+
+  .room-bg-zoom {
+    animation: none;
+  }
+
+  .room-code-shine::before {
+    animation: none;
+    opacity: 0.35;
+    transform: translateX(40%) rotate(8deg);
   }
 }

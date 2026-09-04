@@ -137,8 +137,20 @@ export function RoomGate({ code }: { code: string }) {
   }
 
   return (
-    <section className="mx-auto flex min-h-[70vh] w-full max-w-md items-center px-5">
-      <Card className="w-full p-6">
+    <section className="relative isolate flex min-h-screen w-full items-center justify-center overflow-hidden px-5 py-10">
+      <div
+        className="room-bg-zoom absolute -inset-[6%] bg-cover bg-no-repeat"
+        style={{
+          backgroundImage: "url('/room-bg-feroz.jpg')",
+          backgroundPosition: "right top",
+        }}
+        aria-hidden
+      />
+      <div
+        className="absolute inset-0 bg-[linear-gradient(90deg,rgba(7,5,12,0.88)_0%,rgba(7,5,12,0.62)_42%,rgba(7,5,12,0.28)_100%),linear-gradient(180deg,rgba(7,5,12,0.2)_0%,rgba(7,5,12,0.55)_100%)]"
+        aria-hidden
+      />
+      <Card className="relative z-10 w-full max-w-md border-[var(--sp-border)] bg-black/55 p-6 backdrop-blur-xl">
         <p className="text-sm text-[var(--sp-text-subtle)]">Entrar na sala</p>
         <h1 className="mt-2 text-2xl font-semibold text-[var(--sp-text)]">{code}</h1>
         <label className="mt-6 block text-sm font-medium" htmlFor="gate-name">

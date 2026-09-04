@@ -26,9 +26,8 @@ export async function createParticipantToken(input: {
     canPublish: true,
     canSubscribe: true,
     canPublishData: true,
-    canUpdateOwnMetadata: false,
+    canUpdateOwnMetadata: true,
     roomAdmin: input.role === "host",
-    canPublishSources: [2, 3, 4],
   });
 
   return token.toJwt();

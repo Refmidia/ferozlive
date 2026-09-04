@@ -17,6 +17,7 @@ import {
   muteScreenShare,
   provisionLiveKitRoom,
   removeLiveKitParticipant,
+  setParticipantMicrophoneMuted,
 } from "@/lib/livekit/admin";
 import { getHostSecretFromRequest, isHostSecret } from "@/lib/auth/host";
 import {
@@ -184,6 +185,7 @@ export async function kickParticipantFromRoom(
   client: SupabaseClient,
   room: RoomRecord,
   identity: string,
+  options: { ban?: boolean; displayName?: string } = {},
 ): Promise<void> {
   if (identity.startsWith("host_")) {
     throw unauthorized("O anfitrião não pode ser removido.");
@@ -194,7 +196,67 @@ export async function kickParticipantFromRoom(
     room_id: room.id,
     event_type: "kicked",
     participant_identity: identity,
+    metadata: {
+      ban: Boolean(options.ban),
+      displayName: options.displayName?.trim().toLowerCase() || null,
+    },
   });
+}
+
+export async function muteParticipantInRoom(
+  client: SupabaseClient,
+  room: RoomRecord,
+  identity: string,
+  muted = true,
+): Promise<void> {
+  if (identity.startsWith("host_")) {
+    throw unauthorized("O anfitrião não pode ser mutado por esta ação.");
+  }
+
+  try {
+    await setParticipantMicrophoneMuted(room.livekit_room_name, identity, muted);
+  } catch (error) {
+    // Unmute must still succeed so the host can unlock the guest via data message.
+    if (muted) {
+      throw error;
+    }
+  }
+
+  await insertRoomEvent(client, {
+    room_id: room.id,
+    event_type: "share_stopped",
+    participant_identity: identity,
+    metadata: { by: "host", action: muted ? "force_mute" : "force_unmute" },
+  });
+}
+
+export async function assertParticipantNotBanned(
+  client: SupabaseClient,
+  room: RoomRecord,
+  displayName: string,
+): Promise<void> {
+  const normalized = displayName.trim().toLowerCase();
+  if (!normalized) return;
+
+  const { data, error } = await client
+    .from("room_events")
+    .select("id, metadata")
+    .eq("room_id", room.id)
+    .eq("event_type", "kicked")
+    .limit(100);
+
+  if (error) {
+    throw error;
+  }
+
+  const banned = (data ?? []).some((row) => {
+    const metadata = (row.metadata ?? {}) as { ban?: boolean; displayName?: string | null };
+    return Boolean(metadata.ban) && metadata.displayName === normalized;
+  });
+
+  if (banned) {
+    throw unauthorized("Você foi banido desta sala pelo anfitrião.");
+  }
 }
 
 export async function stopParticipantShare(
