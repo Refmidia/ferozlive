@@ -1,0 +1,12 @@
+/* Harmoniza os componentes oficiais do LiveKit com a identidade ScreenParty. */
+:root {
+  --lk-bg: var(--sp-bg);
+  --lk-bg2: var(--sp-surface-solid);
+  --lk-fg: var(--sp-text);
+  --lk-fg5: var(--sp-text-muted);
+  --lk-accent-fg: #ffffff;
+  --lk-accent-bg: var(--sp-primary);
+  --lk-border-color: var(--sp-border);
+  --lk-control-bg: var(--sp-surface-solid);
+  --lk-control-hover-bg: var(--sp-surface-hover);
+}
