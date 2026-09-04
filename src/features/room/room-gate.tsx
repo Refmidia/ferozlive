@@ -127,7 +127,11 @@ export function RoomGate({ code }: { code: string }) {
         }}
         onError={() => toast.error("Falha na conexão de mídia. Tentando novamente...")}
       >
-        <RoomSession code={room?.publicCode ?? code} role={role} />
+        <RoomSession
+          code={room?.publicCode ?? code}
+          role={role}
+          hasPassword={Boolean(room?.hasPassword)}
+        />
       </LiveKitRoom>
     );
   }

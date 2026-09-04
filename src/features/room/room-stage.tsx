@@ -8,8 +8,14 @@ import { parseParticipantMetadata } from "@/types/participant";
 
 export function RoomStage({
   fullscreenRef,
+  onShare,
+  onCopyLink,
+  canShare,
 }: {
   fullscreenRef: RefObject<HTMLDivElement | null>;
+  onShare?: () => void;
+  onCopyLink?: () => void;
+  canShare?: boolean;
 }) {
   const tracks = useTracks(
     [
@@ -19,7 +25,9 @@ export function RoomStage({
     { onlySubscribed: false },
   );
 
-  const video = tracks.find((track) => track.source === Track.Source.ScreenShare && track.publication?.track);
+  const video = tracks.find(
+    (track) => track.source === Track.Source.ScreenShare && track.publication?.track,
+  );
   const audios = tracks.filter((track) => track.source === Track.Source.ScreenShareAudio);
   const sharerName =
     parseParticipantMetadata(video?.participant.metadata)?.displayName ??
@@ -29,24 +37,24 @@ export function RoomStage({
   return (
     <div
       ref={fullscreenRef}
-      className="relative min-h-[360px] overflow-hidden rounded-3xl border border-[var(--sp-border)] bg-[rgba(8,8,14,0.88)]"
+      className="relative h-full min-h-[420px] overflow-hidden bg-[#07050c]"
     >
       {video?.publication ? (
         <>
-          <VideoTrack
-            trackRef={video}
-            className="h-full w-full object-contain"
-          />
-          <p className="absolute left-4 top-4 rounded-full bg-black/55 px-3 py-1 text-sm text-white">
+          <VideoTrack trackRef={video} className="h-full w-full object-contain" />
+          <p className="absolute left-4 top-4 rounded-full bg-black/60 px-3 py-1 text-sm text-white backdrop-blur-sm">
             {sharerName} está transmitindo
           </p>
         </>
       ) : (
-        <EmptyStage />
+        <EmptyStage onShare={onShare} onCopyLink={onCopyLink} canShare={canShare} />
       )}
       {audios.map((track) =>
         track.publication ? (
-          <AudioTrack key={`${track.participant.identity}-${track.publication.trackSid}`} trackRef={track} />
+          <AudioTrack
+            key={`${track.participant.identity}-${track.publication.trackSid}`}
+            trackRef={track}
+          />
         ) : null,
       )}
     </div>

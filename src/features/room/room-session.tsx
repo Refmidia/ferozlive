@@ -10,8 +10,16 @@ import {
   useRoomContext,
   useTracks,
 } from "@livekit/components-react";
-import { Copy, Link2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import {
+  Copy,
+  Link2,
+  Lock,
+  LockOpen,
+  MonitorUp,
+  Pencil,
+  Users,
+} from "lucide-react";
+import { Logo } from "@/components/brand/logo";
 import { Modal } from "@/components/ui/modal";
 import { ConnectionIndicator } from "@/features/room/connection-indicator";
 import { IncompatibleBrowser } from "@/features/room/incompatible-browser";
@@ -19,6 +27,7 @@ import { ParticipantList } from "@/features/room/participant-list";
 import { RoomStage } from "@/features/room/room-stage";
 import { RoomToolbar } from "@/features/room/room-toolbar";
 import { useClipboard } from "@/hooks/use-clipboard";
+import { useDisplayName } from "@/hooks/use-display-name";
 import { useScreenShareSupport } from "@/hooks/use-screen-share-support";
 import { apiFetch, ClientApiError } from "@/lib/http/client";
 import {
@@ -33,9 +42,11 @@ import { DEFAULT_QUALITY } from "@/config/quality";
 export function RoomSession({
   code,
   role,
+  hasPassword = false,
 }: {
   code: string;
   role: ParticipantRole;
+  hasPassword?: boolean;
 }) {
   const router = useRouter();
   const room = useRoomContext();
@@ -44,10 +55,12 @@ export function RoomSession({
   const screenTracks = useTracks([{ source: Track.Source.ScreenShare, withPlaceholder: false }]);
   const canShare = useScreenShareSupport();
   const { copy, copied } = useClipboard();
+  const { name, saveName } = useDisplayName();
   const stageRef = useRef<HTMLDivElement>(null);
-  const [quality, setQuality] = useState<QualityPresetId>(DEFAULT_QUALITY);
-  const [participantsOpen, setParticipantsOpen] = useState(true);
+  const [quality] = useState<QualityPresetId>(DEFAULT_QUALITY);
   const [confirmEnd, setConfirmEnd] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [draftName, setDraftName] = useState("");
   const inviteUrl = typeof window === "undefined" ? "" : `${window.location.origin}/room/${code}`;
 
   const views = useMemo(
@@ -69,6 +82,8 @@ export function RoomSession({
     [participants],
   );
 
+  const localView = views.find((participant) => participant.identity === localParticipant.identity);
+  const displayName = localView?.displayName || name || "Convidado";
   const isSharing = localParticipant.isScreenShareEnabled;
   const someoneElseSharing = screenTracks.some(
     (track) => track.participant.identity !== localParticipant.identity && track.publication,
@@ -99,14 +114,6 @@ export function RoomSession({
       room.off(RoomEvent.Disconnected, onDisconnected);
     };
   }, [room, router, code]);
-
-  async function toggleMic() {
-    try {
-      await localParticipant.setMicrophoneEnabled(!localParticipant.isMicrophoneEnabled);
-    } catch {
-      toast.error("Permissão de microfone negada ou indisponível.");
-    }
-  }
 
   async function startShare(selectedQuality: QualityPresetId) {
     if (someoneElseSharing) {
@@ -151,76 +158,191 @@ export function RoomSession({
     }
   }
 
+  async function applyDisplayName() {
+    const sanitized = saveName(draftName);
+    if (!sanitized) {
+      toast.error("Informe um nome válido.");
+      return;
+    }
+
+    try {
+      await localParticipant.setName(sanitized);
+      const current = parseParticipantMetadata(localParticipant.metadata);
+      await localParticipant.setMetadata(
+        JSON.stringify({
+          role: current?.role ?? role,
+          displayName: sanitized,
+        }),
+      );
+      setEditingName(false);
+      toast.success("Nome atualizado.");
+    } catch {
+      toast.error("Não foi possível atualizar o nome agora.");
+    }
+  }
+
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-4 px-4 py-4">
-      <header className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-[var(--sp-border)] bg-[var(--sp-surface)] px-4 py-3">
-        <div>
-          <p className="text-xs uppercase tracking-[0.2em] text-[var(--sp-text-subtle)]">Sala</p>
-          <p className="text-xl font-semibold text-[var(--sp-text)]">{code}</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <ConnectionIndicator />
-          <Button
-            variant="secondary"
+    <div className="flex min-h-screen flex-col bg-[#07050c] text-white">
+      <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-white/8 px-4 sm:px-5">
+        <div className="flex min-w-0 items-center gap-3">
+          <Logo compact />
+          <button
+            type="button"
             onClick={() => void copy(code, "code")}
+            className="inline-flex max-w-full items-center gap-2 rounded-full border border-[var(--sp-border-strong)] bg-[var(--sp-primary-soft)] px-3 py-1.5 text-sm font-medium text-[#FF8FBF] transition hover:bg-[rgba(233,30,99,0.24)]"
             aria-label="Copiar código da sala"
           >
-            <Copy className="h-4 w-4" aria-hidden />
-            {copied === "code" ? "Código copiado" : "Copiar código"}
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() => void copy(inviteUrl, "link")}
-            aria-label="Copiar link de convite"
+            <Link2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span className="truncate">{copied === "code" ? "Copiado" : code}</span>
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2 sm:gap-3">
+          <button
+            type="button"
+            onClick={() =>
+              toast.message(
+                hasPassword
+                  ? "Esta sala está protegida por senha."
+                  : "Esta sala está aberta. Crie com senha para trancar.",
+              )
+            }
+            className="hidden items-center gap-2 rounded-xl border border-white/10 px-3 py-1.5 text-sm text-[#C9B8D8] transition hover:bg-white/5 hover:text-white sm:inline-flex"
+            aria-label={hasPassword ? "Sala trancada" : "Trancar sala"}
           >
-            <Link2 className="h-4 w-4" aria-hidden />
-            {copied === "link" ? "Link copiado" : "Copiar link"}
-          </Button>
+            {hasPassword ? <Lock className="h-4 w-4" /> : <LockOpen className="h-4 w-4" />}
+            {hasPassword ? "Trancada" : "Trancar"}
+          </button>
+          <span className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 px-2.5 py-1.5 text-sm text-[#C9B8D8]">
+            <Users className="h-4 w-4" aria-hidden />
+            {participants.length}
+          </span>
+          <ConnectionIndicator />
+          {role === "host" ? (
+            <button
+              type="button"
+              onClick={() => setConfirmEnd(true)}
+              className="hidden rounded-xl border border-[#FF4D6D]/40 px-3 py-1.5 text-sm text-[#FF8FA3] transition hover:bg-[#FF4D6D]/10 sm:inline-flex"
+            >
+              Encerrar
+            </button>
+          ) : null}
         </div>
       </header>
 
-      {!canShare ? <IncompatibleBrowser /> : null}
+      {!canShare ? (
+        <div className="px-4 pt-3 sm:px-5">
+          <IncompatibleBrowser />
+        </div>
+      ) : null}
 
-      <div className={`grid flex-1 gap-4 ${participantsOpen ? "lg:grid-cols-[1fr_280px]" : ""}`}>
-        <RoomStage fullscreenRef={stageRef} />
-        {participantsOpen ? (
-          <ParticipantList
-            participants={views}
-            isHost={role === "host"}
-            onKick={(identity) => void handleAdmin(`/api/rooms/${code}/kick`, { identity })}
-            onStopShare={(identity) =>
-              void handleAdmin(`/api/rooms/${code}/stop-share`, { identity })
-            }
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        <aside className="flex w-full shrink-0 flex-col border-b border-white/8 bg-[#0a0710] lg:w-[300px] lg:border-b-0 lg:border-r">
+          <div className="border-b border-white/8 p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7E6E90]">
+              Código da sala
+            </p>
+            <div className="mt-2 flex items-center gap-2">
+              <p className="text-2xl font-semibold tracking-wide text-white">{code}</p>
+              <button
+                type="button"
+                onClick={() => void copy(code, "code")}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-[#C9B8D8] transition hover:bg-white/5 hover:text-white"
+                aria-label="Copiar código"
+              >
+                <Copy className="h-4 w-4" />
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => void copy(inviteUrl, "link")}
+              className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--sp-border)] bg-transparent px-3 py-2.5 text-sm text-[#E8D7F5] transition hover:border-[var(--sp-border-strong)] hover:bg-[var(--sp-primary-soft)]"
+            >
+              <Link2 className="h-4 w-4 text-[#FF2D95]" aria-hidden />
+              {copied === "link" ? "Link copiado" : "Copiar link do convite"}
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4">
+            <ParticipantList
+              participants={views}
+              localIdentity={localParticipant.identity}
+              isHost={role === "host"}
+              onKick={(identity) => void handleAdmin(`/api/rooms/${code}/kick`, { identity })}
+              onStopShare={(identity) =>
+                void handleAdmin(`/api/rooms/${code}/stop-share`, { identity })
+              }
+            />
+          </div>
+
+          <div className="mt-auto border-t border-white/8 p-4">
+            <button
+              type="button"
+              onClick={() => void (isSharing ? stopOwnShare() : startShare(quality))}
+              disabled={!canShare && !isSharing}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--sp-border)] px-3 py-2.5 text-sm text-[#E8D7F5] transition hover:border-[var(--sp-border-strong)] hover:bg-[var(--sp-primary-soft)] disabled:opacity-50"
+            >
+              <MonitorUp className="h-4 w-4 text-[#FF2D95]" aria-hidden />
+              {isSharing ? "Parar compartilhamento" : "Compartilhar tela"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setDraftName(displayName);
+                setEditingName(true);
+              }}
+              className="mt-3 flex w-full items-center justify-between gap-2 rounded-lg px-1 py-1 text-left text-sm text-[#9A8AAE] transition hover:text-white"
+            >
+              <span className="truncate">Você entrou como {displayName}</span>
+              <Pencil className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            </button>
+          </div>
+        </aside>
+
+        <main className="relative min-h-0 flex-1">
+          <RoomStage
+            fullscreenRef={stageRef}
+            canShare={canShare}
+            onShare={() => void startShare(quality)}
+            onCopyLink={() => void copy(inviteUrl, "link")}
           />
-        ) : null}
+          <RoomToolbar
+            sharing={isSharing}
+            onToggleShare={() => void (isSharing ? stopOwnShare() : startShare(quality))}
+            onFullscreen={() => {
+              const node = stageRef.current;
+              if (!node) return;
+              if (document.fullscreenElement) {
+                void document.exitFullscreen();
+              } else {
+                void node.requestFullscreen();
+              }
+            }}
+            onLeave={() => {
+              void room.disconnect();
+              router.push("/");
+            }}
+          />
+        </main>
       </div>
 
-      <RoomToolbar
-        micEnabled={localParticipant.isMicrophoneEnabled}
-        sharing={isSharing}
-        isHost={role === "host"}
-        quality={quality}
-        participantsOpen={participantsOpen}
-        onToggleMic={() => void toggleMic()}
-        onToggleShare={() => void (isSharing ? stopOwnShare() : startShare(quality))}
-        onStopShare={() => void stopOwnShare()}
-        onFullscreen={() => {
-          const node = stageRef.current;
-          if (!node) return;
-          if (document.fullscreenElement) {
-            void document.exitFullscreen();
-          } else {
-            void node.requestFullscreen();
-          }
-        }}
-        onToggleParticipants={() => setParticipantsOpen((value) => !value)}
-        onLeave={() => {
-          void room.disconnect();
-          router.push("/");
-        }}
-        onEndRoom={() => setConfirmEnd(true)}
-        onQualityChange={setQuality}
-      />
+      {editingName ? (
+        <Modal
+          title="Alterar nome"
+          description="Esse nome aparece para a staff e para os outros na sala."
+          confirmLabel="Salvar"
+          onClose={() => setEditingName(false)}
+          onConfirm={() => void applyDisplayName()}
+        >
+          <input
+            value={draftName}
+            onChange={(event) => setDraftName(event.target.value)}
+            className="mt-4 w-full rounded-xl border border-[var(--sp-border)] bg-black/40 px-3 py-2.5 text-white outline-none focus:border-[var(--sp-border-strong)]"
+            aria-label="Seu nome"
+            maxLength={40}
+          />
+        </Modal>
+      ) : null}
 
       {confirmEnd ? (
         <Modal
