@@ -25,7 +25,7 @@ CRON_SECRET
 
 ## Cron
 
-`vercel.json` agenda `GET /api/cron/cleanup` a cada hora. A rota exige `Authorization: Bearer CRON_SECRET`. A Vercel injeta esse header automaticamente quando o cron nativo está disponível.
+`vercel.json` agenda `GET /api/cron/cleanup` uma vez por dia (06:00 UTC) — limite do plano Hobby da Vercel. A rota exige `Authorization: Bearer CRON_SECRET`. A Vercel injeta esse header automaticamente quando o cron nativo está disponível.
 
 Se o plano não disparar cron, chame a rota por um agendador externo ou manualmente.
 
