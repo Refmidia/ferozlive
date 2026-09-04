@@ -12,6 +12,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RoomSession } from "@/features/room/room-session";
+import { ensureMicrophonePermission } from "@/features/room/audio-devices";
 import { useDisplayName } from "@/hooks/use-display-name";
 import { apiFetch, ClientApiError } from "@/lib/http/client";
 import type { JoinRoomResponse, RoomLookupResponse, TokenResponse } from "@/types/api";
@@ -65,6 +66,11 @@ export function RoomGate({ code }: { code: string }) {
     const saved = saveName(currentName);
     setConnecting(true);
     try {
+      const micOk = await ensureMicrophonePermission();
+      if (!micOk) {
+        toast.error("Permita o microfone no navegador para falar na sala.");
+      }
+
       const join = await apiFetch<JoinRoomResponse>("/api/rooms/join", {
         method: "POST",
         body: JSON.stringify({
@@ -113,12 +119,17 @@ export function RoomGate({ code }: { code: string }) {
         token={token}
         serverUrl={livekitUrl}
         connect
-        audio={false}
+        audio
         video={false}
         options={{
           adaptiveStream: true,
           dynacast: true,
           disconnectOnPageLeave: true,
+          audioCaptureDefaults: {
+            autoGainControl: true,
+            echoCancellation: true,
+            noiseSuppression: true,
+          },
           publishDefaults: {
             simulcast: true,
             dtx: true,

@@ -2,8 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Mic, MicOff } from "lucide-react";
-import { Room } from "livekit-client";
 import { useRoomContext } from "@livekit/components-react";
+import {
+  listAudioDevices,
+  switchMicrophone,
+  toastDeviceError,
+} from "@/features/room/audio-devices";
 
 export function MicControl({
   micEnabled,
@@ -19,6 +23,7 @@ export function MicControl({
   const room = useRoomContext();
   const rootRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [mics, setMics] = useState<MediaDeviceInfo[]>([]);
   const [activeMicId, setActiveMicId] = useState<string>("");
 
@@ -27,10 +32,15 @@ export function MicControl({
 
     async function loadDevices() {
       try {
-        const devices = await Room.getLocalDevices("audioinput", false);
+        const devices = await listAudioDevices("audioinput", false);
         if (cancelled) return;
-        setMics(devices.filter((device) => device.deviceId));
-        setActiveMicId(room.getActiveDevice("audioinput") ?? devices[0]?.deviceId ?? "");
+        setMics(devices);
+        const active = room.getActiveDevice("audioinput");
+        setActiveMicId(
+          active && devices.some((device) => device.deviceId === active)
+            ? active
+            : (devices[0]?.deviceId ?? ""),
+        );
       } catch {
         // permission may be pending until first mic enable
       }
@@ -38,30 +48,38 @@ export function MicControl({
 
     void loadDevices();
     room.on("mediaDevicesChanged", loadDevices);
+    room.on("activeDeviceChanged", loadDevices);
     return () => {
       cancelled = true;
       room.off("mediaDevicesChanged", loadDevices);
+      room.off("activeDeviceChanged", loadDevices);
     };
   }, [room]);
 
   useEffect(() => {
     if (!open) return;
 
-    function onPointerDown(event: MouseEvent) {
+    function onPointerDown(event: PointerEvent) {
       if (!rootRef.current?.contains(event.target as Node)) {
         setOpen(false);
       }
     }
 
-    window.addEventListener("mousedown", onPointerDown);
-    return () => window.removeEventListener("mousedown", onPointerDown);
+    // Use bubble phase click-outside; don't close on menu item press.
+    window.addEventListener("pointerdown", onPointerDown);
+    return () => window.removeEventListener("pointerdown", onPointerDown);
   }, [open]);
 
   async function openMenu() {
     try {
-      const devices = await Room.getLocalDevices("audioinput", true);
-      setMics(devices.filter((device) => device.deviceId));
-      setActiveMicId(room.getActiveDevice("audioinput") ?? devices[0]?.deviceId ?? "");
+      const devices = await listAudioDevices("audioinput", true);
+      setMics(devices);
+      const active = room.getActiveDevice("audioinput");
+      setActiveMicId(
+        active && devices.some((device) => device.deviceId === active)
+          ? active
+          : (devices[0]?.deviceId ?? ""),
+      );
     } catch {
       // ignore
     }
@@ -69,12 +87,21 @@ export function MicControl({
   }
 
   async function selectMic(deviceId: string) {
+    if (busy || deviceId === activeMicId) {
+      setOpen(false);
+      return;
+    }
+
+    setBusy(true);
     try {
-      await room.switchActiveDevice("audioinput", deviceId);
+      await switchMicrophone(room, deviceId);
       setActiveMicId(deviceId);
       setOpen(false);
     } catch {
+      toastDeviceError("mic");
       setOpen(false);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -120,7 +147,10 @@ export function MicControl({
       </div>
 
       {open ? (
-        <div className="absolute bottom-[calc(100%+10px)] left-0 z-50 min-w-[220px] max-w-[280px] overflow-hidden rounded-2xl border border-white/10 bg-[#120b18] py-1.5 shadow-[0_18px_50px_rgba(0,0,0,0.55)]">
+        <div
+          className="absolute bottom-[calc(100%+10px)] left-0 z-50 min-w-[240px] max-w-[300px] overflow-hidden rounded-2xl border border-white/10 bg-[#120b18] py-1.5 shadow-[0_18px_50px_rgba(0,0,0,0.55)]"
+          onPointerDown={(event) => event.stopPropagation()}
+        >
           <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#7E6E90]">
             Microfone
           </p>
@@ -133,8 +163,9 @@ export function MicControl({
                 <button
                   key={device.deviceId}
                   type="button"
+                  disabled={busy}
                   onClick={() => void selectMic(device.deviceId)}
-                  className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition hover:bg-white/5 ${
+                  className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition hover:bg-white/5 disabled:opacity-60 ${
                     selected ? "text-[#3DDC97]" : "text-[#E8D7F5]"
                   }`}
                 >

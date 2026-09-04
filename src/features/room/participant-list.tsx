@@ -35,7 +35,7 @@ function ParticipantRow({
 
   return (
     <li
-      className={`flex items-center gap-3 rounded-2xl px-2.5 py-2.5 ${
+      className={`flex items-start gap-3 rounded-2xl px-2.5 py-2.5 ${
         highlighted ? "border border-white/8 bg-[#14101c]" : "px-1"
       }`}
     >
@@ -63,20 +63,27 @@ function ParticipantRow({
           </span>
         ) : null}
       </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-1.5">
+
+      <div className="min-w-0 flex-1 overflow-hidden">
+        <div className="flex min-w-0 items-center gap-1.5">
           <p className="truncate text-sm font-medium text-white">{participant.displayName}</p>
           {participant.role === "host" ? (
-            <Crown className="h-3.5 w-3.5 text-[#F5C16C]" aria-label="Anfitrião" />
+            <Crown className="h-3.5 w-3.5 shrink-0 text-[#F5C16C]" aria-label="Anfitrião" />
           ) : null}
           {isYou ? (
-            <span className="rounded-md bg-[var(--sp-primary-soft)] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#FF2D95]">
+            <span className="shrink-0 rounded-md bg-[var(--sp-primary-soft)] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#FF2D95]">
               Você
             </span>
           ) : null}
         </div>
-        <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-[#9A8AAE]">
-          {participant.isSharing ? <span className="text-[#FF8FBF]">Compartilhando tela</span> : null}
+
+        <div className="mt-1 flex min-w-0 flex-col gap-1 text-xs text-[#9A8AAE]">
+          {participant.isSharing ? (
+            <span className="inline-flex min-w-0 items-center gap-1.5 text-[#FF8FBF]">
+              <Monitor className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span className="truncate">Compartilhando tela</span>
+            </span>
+          ) : null}
           <span className="inline-flex items-center gap-1" title={silenced ? "Mutado" : "No microfone"}>
             {silenced ? (
               <MicOff className="h-3.5 w-3.5 text-[#FF6B8A]" strokeWidth={2.4} aria-hidden />
@@ -87,64 +94,56 @@ function ParticipantRow({
                 aria-hidden
               />
             )}
-            {participant.isSpeaking && !silenced
-              ? "Falando"
-              : participant.isSharing
-                ? null
-                : silenced
-                  ? "Mutado"
-                  : null}
+            {participant.isSpeaking && !silenced ? "Falando" : silenced ? "Mutado" : "No microfone"}
           </span>
         </div>
+
+        {isHost && participant.role !== "host" && !isYou ? (
+          <div className="mt-2 flex flex-wrap items-center gap-1">
+            {hostMuted ? (
+              <button
+                type="button"
+                onClick={() => onUnmute(participant.identity)}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#3DDC97]/40 bg-[#12301f]/80 text-[#3DDC97] shadow-[0_0_12px_rgba(61,220,151,0.2)] transition hover:bg-[#164028] hover:text-[#6EF0B0]"
+                aria-label={`Desmutar ${participant.displayName}`}
+                title="Desmutar"
+              >
+                <Mic className="h-4 w-4" strokeWidth={2.25} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onMute(participant.identity)}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 text-[#C9B8D8] transition hover:border-[#FF8FA3]/45 hover:bg-[#FF4D6D]/12 hover:text-[#FF8FA3]"
+                aria-label={`Mutar ${participant.displayName}`}
+                title="Mutar"
+              >
+                <MicOff className="h-4 w-4" strokeWidth={2.25} />
+              </button>
+            )}
+            {participant.isSharing ? (
+              <button
+                type="button"
+                onClick={() => onStopShare(participant.identity)}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 text-[#C9B8D8] transition hover:bg-white/5 hover:text-white"
+                aria-label={`Parar compartilhamento de ${participant.displayName}`}
+                title="Parar tela"
+              >
+                <MonitorOff className="h-4 w-4" />
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => onKick(participant.identity)}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 text-[#C9B8D8] transition hover:border-[#FF4D6D]/45 hover:bg-[#FF4D6D]/12 hover:text-[#FF8FA3]"
+              aria-label={`Expulsar ${participant.displayName}`}
+              title="Expulsar da sala"
+            >
+              <UserX className="h-4 w-4" strokeWidth={2.25} />
+            </button>
+          </div>
+        ) : null}
       </div>
-      {participant.isSharing ? (
-        <Monitor className="h-4 w-4 shrink-0 text-[#FF2D95]" aria-hidden />
-      ) : null}
-      {isHost && participant.role !== "host" && !isYou ? (
-        <div className="flex shrink-0 items-center gap-1">
-          {hostMuted ? (
-            <button
-              type="button"
-              onClick={() => onUnmute(participant.identity)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#3DDC97]/40 bg-[#12301f]/80 text-[#3DDC97] shadow-[0_0_12px_rgba(61,220,151,0.2)] transition hover:bg-[#164028] hover:text-[#6EF0B0]"
-              aria-label={`Desmutar ${participant.displayName}`}
-              title="Desmutar"
-            >
-              <Mic className="h-4 w-4" strokeWidth={2.25} />
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => onMute(participant.identity)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 text-[#C9B8D8] transition hover:border-[#FF8FA3]/45 hover:bg-[#FF4D6D]/12 hover:text-[#FF8FA3]"
-              aria-label={`Mutar ${participant.displayName}`}
-              title="Mutar"
-            >
-              <MicOff className="h-4 w-4" strokeWidth={2.25} />
-            </button>
-          )}
-          {participant.isSharing ? (
-            <button
-              type="button"
-              onClick={() => onStopShare(participant.identity)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 text-[#C9B8D8] transition hover:bg-white/5 hover:text-white"
-              aria-label={`Parar compartilhamento de ${participant.displayName}`}
-              title="Parar tela"
-            >
-              <MonitorOff className="h-4 w-4" />
-            </button>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => onKick(participant.identity)}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 text-[#C9B8D8] transition hover:border-[#FF4D6D]/45 hover:bg-[#FF4D6D]/12 hover:text-[#FF8FA3]"
-            aria-label={`Expulsar ${participant.displayName}`}
-            title="Expulsar da sala"
-          >
-            <UserX className="h-4 w-4" strokeWidth={2.25} />
-          </button>
-        </div>
-      ) : null}
     </li>
   );
 }

@@ -114,13 +114,41 @@ export function RoomSession({
       return;
     }
 
-    void localParticipant.setMicrophoneEnabled(desired).catch(() => {
-      if (desired) {
-        toast.error("Permissão de microfone negada ou indisponível.");
-        setMicDesired(false);
+    void (async () => {
+      try {
+        if (desired) {
+          await room.startAudio().catch(() => undefined);
+        }
+        const deviceId = room.getActiveDevice("audioinput");
+        await localParticipant.setMicrophoneEnabled(
+          desired,
+          desired && deviceId ? { deviceId } : undefined,
+        );
+      } catch {
+        if (desired) {
+          toast.error("Permissão de microfone negada ou indisponível.");
+          setMicDesired(false);
+        }
       }
-    });
-  }, [localParticipant, micDesired, deafened, forceMuted]);
+    })();
+  }, [localParticipant, micDesired, deafened, forceMuted, room]);
+
+  async function toggleMic() {
+    if (forceMuted) {
+      toast.error("Você foi mutado pelo anfitrião. Só ele pode liberar seu microfone.");
+      return;
+    }
+
+    void room.startAudio().catch(() => undefined);
+
+    if (deafened) {
+      setDeafened(false);
+      setMicDesired(true);
+      return;
+    }
+
+    setMicDesired((current) => !current);
+  }
 
   useEffect(() => {
     const onData = (
@@ -264,24 +292,6 @@ export function RoomSession({
     } catch {
       // local burst already shown
     }
-  }
-
-  async function toggleMic() {
-    if (forceMuted) {
-      toast.error("Você foi mutado pelo anfitrião. Só ele pode liberar seu microfone.");
-      return;
-    }
-
-    if (deafened) {
-      setDeafened(false);
-      setMicDesired(true);
-      void room.startAudio().catch(() => undefined);
-      return;
-    }
-
-    const next = !micDesired;
-    setMicDesired(next);
-    void room.startAudio().catch(() => undefined);
   }
 
   async function toggleDeafen() {
@@ -448,36 +458,38 @@ export function RoomSession({
         <aside className="flex w-full shrink-0 flex-col border-b border-white/8 bg-[#0a0710] lg:w-[300px] lg:border-b-0 lg:border-r">
           <div className="border-b border-white/8 px-3 py-3">
             <div className="room-code-shine relative overflow-hidden rounded-xl border px-3 py-2.5">
-              <div className="relative z-10 flex items-center justify-between gap-2">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8B7A9C]">
-                  Código da sala
-                </p>
-                {hasPassword ? (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-[#FF8FBF]">
-                    <Lock className="h-3 w-3" aria-hidden />
-                    Protegida
-                  </span>
-                ) : (
-                  <span className="text-[10px] font-medium text-[#7E6E90]">Aberta</span>
-                )}
-              </div>
-              <div className="relative z-10 mt-1.5 flex items-center gap-1.5">
-                <p className="w-fit rounded-lg border border-dashed border-[#FF2D95]/45 bg-black/20 px-2.5 py-1.5 font-mono text-sm font-semibold tracking-[0.14em] text-white">
-                  {code}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => void copy(code, "code")}
-                  className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition ${
-                    copied === "code"
-                      ? "bg-[#12301f] text-[#3DDC97]"
-                      : "text-[#9A8AAE] hover:bg-white/5 hover:text-white"
-                  }`}
-                  aria-label="Copiar código"
-                  title="Copiar código"
-                >
-                  <Copy className="h-3.5 w-3.5" />
-                </button>
+              <div className="relative z-10 flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8B7A9C]">
+                    Código da sala
+                  </p>
+                  <p className="mt-1.5 w-fit rounded-lg border border-dashed border-[#FF2D95]/45 bg-black/20 px-2.5 py-1.5 font-mono text-sm font-semibold tracking-[0.14em] text-white">
+                    {code}
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-1.5">
+                  {hasPassword ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-[#FF8FBF]">
+                      <Lock className="h-3 w-3" aria-hidden />
+                      Protegida
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-medium text-[#7E6E90]">Aberta</span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void copy(code, "code")}
+                    className={`inline-flex h-8 w-8 items-center justify-center rounded-lg transition ${
+                      copied === "code"
+                        ? "bg-[#12301f] text-[#3DDC97]"
+                        : "text-[#9A8AAE] hover:bg-white/5 hover:text-white"
+                    }`}
+                    aria-label="Copiar código"
+                    title="Copiar código"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </div>
             </div>
           </div>

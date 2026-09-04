@@ -2,8 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Headphones, HeadphoneOff } from "lucide-react";
-import { Room } from "livekit-client";
 import { useRoomContext } from "@livekit/components-react";
+import {
+  listAudioDevices,
+  switchSpeaker,
+  toastDeviceError,
+} from "@/features/room/audio-devices";
 
 export function SpeakerControl({
   deafened,
@@ -15,6 +19,7 @@ export function SpeakerControl({
   const room = useRoomContext();
   const rootRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [speakers, setSpeakers] = useState<MediaDeviceInfo[]>([]);
   const [activeSpeakerId, setActiveSpeakerId] = useState<string>("");
 
@@ -23,11 +28,14 @@ export function SpeakerControl({
 
     async function loadDevices() {
       try {
-        const devices = await Room.getLocalDevices("audiooutput", false);
+        const devices = await listAudioDevices("audiooutput", false);
         if (cancelled) return;
-        setSpeakers(devices.filter((device) => device.deviceId));
+        setSpeakers(devices);
+        const active = room.getActiveDevice("audiooutput");
         setActiveSpeakerId(
-          room.getActiveDevice("audiooutput") ?? devices[0]?.deviceId ?? "",
+          active && devices.some((device) => device.deviceId === active)
+            ? active
+            : (devices[0]?.deviceId ?? ""),
         );
       } catch {
         // some browsers require a prior user gesture / permission
@@ -36,31 +44,37 @@ export function SpeakerControl({
 
     void loadDevices();
     room.on("mediaDevicesChanged", loadDevices);
+    room.on("activeDeviceChanged", loadDevices);
     return () => {
       cancelled = true;
       room.off("mediaDevicesChanged", loadDevices);
+      room.off("activeDeviceChanged", loadDevices);
     };
   }, [room]);
 
   useEffect(() => {
     if (!open) return;
 
-    function onPointerDown(event: MouseEvent) {
+    function onPointerDown(event: PointerEvent) {
       if (!rootRef.current?.contains(event.target as Node)) {
         setOpen(false);
       }
     }
 
-    window.addEventListener("mousedown", onPointerDown);
-    return () => window.removeEventListener("mousedown", onPointerDown);
+    window.addEventListener("pointerdown", onPointerDown);
+    return () => window.removeEventListener("pointerdown", onPointerDown);
   }, [open]);
 
   async function openMenu() {
     try {
-      const devices = await Room.getLocalDevices("audiooutput", true);
-      setSpeakers(devices.filter((device) => device.deviceId));
+      await room.startAudio().catch(() => undefined);
+      const devices = await listAudioDevices("audiooutput", true);
+      setSpeakers(devices);
+      const active = room.getActiveDevice("audiooutput");
       setActiveSpeakerId(
-        room.getActiveDevice("audiooutput") ?? devices[0]?.deviceId ?? "",
+        active && devices.some((device) => device.deviceId === active)
+          ? active
+          : (devices[0]?.deviceId ?? ""),
       );
     } catch {
       // ignore
@@ -69,12 +83,21 @@ export function SpeakerControl({
   }
 
   async function selectSpeaker(deviceId: string) {
+    if (busy || deviceId === activeSpeakerId) {
+      setOpen(false);
+      return;
+    }
+
+    setBusy(true);
     try {
-      await room.switchActiveDevice("audiooutput", deviceId);
+      await switchSpeaker(room, deviceId);
       setActiveSpeakerId(deviceId);
       setOpen(false);
     } catch {
+      toastDeviceError("speaker");
       setOpen(false);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -107,7 +130,10 @@ export function SpeakerControl({
       </div>
 
       {open ? (
-        <div className="absolute bottom-[calc(100%+10px)] left-0 z-50 min-w-[220px] max-w-[280px] overflow-hidden rounded-2xl border border-white/10 bg-[#120b18] py-1.5 shadow-[0_18px_50px_rgba(0,0,0,0.55)]">
+        <div
+          className="absolute bottom-[calc(100%+10px)] left-0 z-50 min-w-[240px] max-w-[300px] overflow-hidden rounded-2xl border border-white/10 bg-[#120b18] py-1.5 shadow-[0_18px_50px_rgba(0,0,0,0.55)]"
+          onPointerDown={(event) => event.stopPropagation()}
+        >
           <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#7E6E90]">
             Saída de áudio
           </p>
@@ -120,8 +146,9 @@ export function SpeakerControl({
                 <button
                   key={device.deviceId}
                   type="button"
+                  disabled={busy}
                   onClick={() => void selectSpeaker(device.deviceId)}
-                  className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition hover:bg-white/5 ${
+                  className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition hover:bg-white/5 disabled:opacity-60 ${
                     selected ? "text-[#3DDC97]" : "text-[#E8D7F5]"
                   }`}
                 >
